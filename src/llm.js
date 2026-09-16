@@ -22,10 +22,14 @@ export async function chat(messages, { maxTokens = 400, temperature = 0.8 } = {}
 /** Fails loudly if Ollama is down or the model is missing, then warms the model up. */
 export async function ensureModel() {
   let tags;
-  try {
-    tags = await (await fetch(`${config.ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(5000) })).json();
-  } catch {
-    throw new Error(`Ollama is not reachable at ${config.ollamaUrl}. Start Ollama first.`);
+  // After a reboot Ollama may still be starting: keep trying for up to 10 minutes.
+  for (let attempt = 1; !tags; attempt++) {
+    try {
+      tags = await (await fetch(`${config.ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(5000) })).json();
+    } catch {
+      if (attempt >= 60) throw new Error(`Ollama is not reachable at ${config.ollamaUrl}. Start Ollama first.`);
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+    }
   }
   const names = tags.models.map((m) => m.name);
   if (!names.includes(config.model)) {

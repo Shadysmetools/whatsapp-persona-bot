@@ -19,6 +19,7 @@ Replies to your WhatsApp chats **as you**, in your own texting style, while you'
 
 - Windows PC with Node.js 20+
 - [Ollama](https://ollama.com) with `gemma3:12b` (about 8 GB; a GPU with 8 GB VRAM or 32 GB RAM is recommended)
+  - If your models live on another drive, set **Ollama app → Settings → Model location** (e.g. `E:\ollama-models`). The tray app ignores the `OLLAMA_MODELS` environment variable. Check with `curl http://localhost:11434/api/tags`.
 
 ## Setup
 

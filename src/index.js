@@ -21,6 +21,8 @@ import { appendHistory, botState, loadHistory } from './store.js';
 
 const log = (...args) => console.log(new Date().toLocaleTimeString('en-GB'), ...args);
 const MAX_MESSAGE_AGE_S = 120;
+// Don't answer messages that sat unanswered this long (quiet hours, pause): a late reply looks robotic.
+const STALE_REPLY_MS = 30 * 60_000;
 
 let sock;
 const pending = new Map(); // jid -> { contact, number, messages: [], timer }
@@ -126,7 +128,7 @@ async function replyTo(jid) {
   busy.add(jid);
   try {
     await sleep(seenDelayMs());
-    const batch = pending.get(jid)?.messages ?? [];
+    const batch = (pending.get(jid)?.messages ?? []).filter((m) => Date.now() - m.receivedAt < STALE_REPLY_MS);
     pending.delete(jid);
     if (!batch.length || botState.paused || botState.isTakenOver(number)) return;
 
@@ -215,7 +217,7 @@ async function onMessage(msg, type) {
   if (!contact) return;
 
   const entry = pending.get(jid) ?? { contact, number, messages: [] };
-  entry.messages.push({ key, text });
+  entry.messages.push({ key, text, receivedAt: Date.now() });
   pending.set(jid, entry);
   if (!busy.has(jid)) schedule(jid);
 }
@@ -274,6 +276,9 @@ log('model ready');
 await start();
 
 // Messages held back by quiet hours, a pause or the daily cap get picked up once that ends.
+// Staggered so several held-back chats don't all get answered in the same second.
 setInterval(() => {
-  for (const jid of pending.keys()) if (!busy.has(jid)) replyTo(jid);
+  for (const jid of pending.keys()) {
+    if (!busy.has(jid)) setTimeout(() => replyTo(jid), rand(0, 4 * 60_000));
+  }
 }, 5 * 60_000);
