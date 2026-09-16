@@ -1,0 +1,23 @@
+﻿{
+  "name": "whatsapp-persona-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WhatsApp auto-reply bot that texts in your own persona using a local Ollama model",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dry-run": "node src/index.js --dry-run",
+    "persona": "node scripts/build-persona.js",
+    "try": "node scripts/try-reply.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "pino": "9.6.0",
+    "qrcode-terminal": "0.12.0"
+  }
+}

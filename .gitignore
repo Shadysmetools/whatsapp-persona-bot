@@ -1,0 +1,18 @@
+node_modules/
+
+# WhatsApp session credentials - anyone with these can take over the account
+auth_info*/
+
+# Personal data - never commit
+.env
+exports/
+data/
+config/allowlist.json
+config/about-me.md
+config/style.md
+
+logs/
+*.log
+
+# Local tooling
+.planning/

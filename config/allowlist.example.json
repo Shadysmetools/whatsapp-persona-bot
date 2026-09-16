@@ -1,0 +1,14 @@
+{
+  "contacts": [
+    {
+      "number": "201001234567",
+      "name": "Ahmed",
+      "notes": "Best friend from university. We talk in Franco, lots of jokes. Calls me 'ya basha'."
+    },
+    {
+      "number": "201112223334",
+      "name": "Mona",
+      "notes": "Cousin. Writes in Arabic letters. Often asks for tech advice."
+    }
+  ]
+}
