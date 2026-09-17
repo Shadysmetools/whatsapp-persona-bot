@@ -15,10 +15,12 @@ const UPSET_PATTERNS = [
   /(كلمني|اتصل|مش تمام|زعلان|زعلانة|مخنوق|حرام عليك|طوارئ|مستشفى|حادثة|الحقني|عيب)/,
 ];
 
-const isShouting = (text) => {
+export const isShouting = (text) => {
   const letters = text.replace(/[^A-Za-z]/g, '');
   return letters.length >= 8 && letters === letters.toUpperCase();
 };
+
+export const isUpset = (text) => UPSET_PATTERNS.some((re) => re.test(text));
 
 export const asksIfBot = (text) => BOT_PATTERNS.some((re) => re.test(text));
 

@@ -16,7 +16,8 @@ import path from 'node:path';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { composeReply } from './agent.js';
-import { breaksPersona, needsHuman } from './bot-question.js';
+import { breaksPersona, isUpset, needsHuman } from './bot-question.js';
+import { composeGroupReply, findGroupConfig, GROUP_LABEL, STOP_RE } from './groups.js';
 import { config, loadAllowlist } from './config.js';
 import { isQuietHours, rand, seenDelayMs, sleep, splitReply, typingMs } from './humanize.js';
 import { ensureModel } from './llm.js';
@@ -211,9 +212,112 @@ function schedule(jid) {
   entry.timer = setTimeout(() => replyTo(jid), config.burstWaitMs);
 }
 
+// ---- Groups: an openly labelled bot, only in groups listed in config/groups.json ----
+const groupSubjects = new Map();
+const groupPending = new Map(); // jid -> { group, subject, messages: [], timer }
+const GROUP_BURST_MS = 20_000;
+const GROUP_MIN_GAP_MS = 60_000;
+const GROUP_STOP_MS = 12 * 60 * 60_000;
+const lastGroupReply = new Map();
+
+async function subjectOf(jid) {
+  if (!groupSubjects.has(jid)) {
+    const meta = await sock.groupMetadata(jid).catch(() => null);
+    groupSubjects.set(jid, meta?.subject ?? '');
+  }
+  return groupSubjects.get(jid);
+}
+
+async function onGroupMessage(msg, type) {
+  const { key } = msg;
+  const jid = key.remoteJid;
+  const ageS = Date.now() / 1000 - Number(msg.messageTimestamp ?? 0);
+  if (ageS > MAX_MESSAGE_AGE_S) return;
+  const text = textOf(msg);
+  const subject = await subjectOf(jid);
+  const group = findGroupConfig(subject);
+  if (!group) return;
+  const groupKey = `group-${digits(jid)}`;
+
+  if (key.fromMe) {
+    if (botSentIds.has(key.id) || type !== 'notify') return;
+    botState.takeOver(groupKey);
+    groupPending.delete(jid);
+    log(`you wrote in ${subject} yourself - bot quiet there for ${config.takeoverMs / 60_000} min`);
+    return;
+  }
+  if (type !== 'notify' || !text) return;
+  const name = msg.pushName || 'someone';
+  log(`[${subject}] ${name}: ${text}`);
+
+  if (STOP_RE.test(text) && !botState.isTakenOver(groupKey)) {
+    botState.takeOver(groupKey, GROUP_STOP_MS);
+    groupPending.delete(jid);
+    await sendHuman(jid, `${GROUP_LABEL}ok ok I'm leaving 😭👋 (${config.ownerName}'s bot, off for 12h)`);
+    await notifyOwner(`${name} asked the bot to stop in ${subject}. It said bye and is off there for 12 hours (!resume to undo).`);
+    return;
+  }
+
+  const entry = groupPending.get(jid) ?? { group, subject, groupKey, messages: [] };
+  entry.messages.push({ key, name, text, receivedAt: Date.now() });
+  groupPending.set(jid, entry);
+  clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => replyToGroup(jid), GROUP_BURST_MS);
+}
+
+async function replyToGroup(jid) {
+  const entry = groupPending.get(jid);
+  if (!entry || busy.has(jid)) return;
+  const { group, subject, groupKey } = entry;
+  if (botState.paused || botState.isTakenOver(groupKey) || isQuietHours() || botState.capReached()) return;
+  const wait = (lastGroupReply.get(jid) ?? 0) + GROUP_MIN_GAP_MS - Date.now();
+  if (wait > 0) {
+    entry.timer = setTimeout(() => replyToGroup(jid), wait);
+    return;
+  }
+
+  busy.add(jid);
+  try {
+    const burst = entry.messages.filter((m) => Date.now() - m.receivedAt < STALE_REPLY_MS);
+    groupPending.delete(jid);
+    if (!burst.length) return;
+
+    const combined = burst.map((m) => m.text).join('\n');
+    // In a group the bot is openly a bot, so bot questions and caps are fine; real anger/urgency is not.
+    if (isUpset(combined)) {
+      botState.takeOver(groupKey);
+      await notifyOwner(`⚠️ ${subject}: someone sounds upset or urgent. Bot stayed quiet there.\n\n${burst.map((m) => `${m.name}: ${m.text}`).join('\n')}`);
+      return;
+    }
+
+    const history = loadHistory(groupKey);
+    await sock.readMessages(burst.map((m) => m.key));
+    const stopTyping = keepTyping(jid);
+    let reply;
+    try {
+      reply = await composeGroupReply(group, subject, history, burst);
+    } finally {
+      stopTyping();
+    }
+    appendHistory(groupKey, 'user', burst.map((m) => `${m.name}: ${m.text}`).join('\n'));
+    if (!reply || botState.isTakenOver(groupKey)) return;
+    await sendHuman(jid, `${GROUP_LABEL}${reply}`);
+    appendHistory(groupKey, 'assistant', reply);
+    lastGroupReply.set(jid, Date.now());
+    botState.countReply();
+    log(`-> [${subject}] ${GROUP_LABEL}${reply}`);
+  } catch (err) {
+    log(`group reply in ${subject} failed:`, err.message);
+  } finally {
+    busy.delete(jid);
+    if (groupPending.has(jid)) replyToGroup(jid);
+  }
+}
+
 async function onMessage(msg, type) {
   const { key } = msg;
   const jid = key.remoteJid;
+  if (jid && isJidGroup(jid)) return onGroupMessage(msg, type);
   if (!jid || isJidGroup(jid) || isJidStatusBroadcast(jid) || isJidBroadcast(jid) || isJidNewsletter(jid)) return;
 
   const ageS = Date.now() / 1000 - Number(msg.messageTimestamp ?? 0);

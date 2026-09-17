@@ -34,8 +34,8 @@ export const botState = {
     save();
   },
   /** Owner typed in this chat: stay out of it for a while. */
-  takeOver(number) {
-    state.takeovers[number] = Date.now() + config.takeoverMs;
+  takeOver(number, ms = config.takeoverMs) {
+    state.takeovers[number] = Date.now() + ms;
     save();
   },
   isTakenOver(number) {

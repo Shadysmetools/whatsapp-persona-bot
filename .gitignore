@@ -16,3 +16,4 @@ logs/
 
 # Local tooling
 .planning/
+config/groups.json
