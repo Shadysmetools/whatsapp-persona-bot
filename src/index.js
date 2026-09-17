@@ -313,7 +313,8 @@ async function replyToGroup(jid) {
       stopTyping();
     }
     appendHistory(groupKey, 'user', burst.map((m) => `${m.name}: ${m.text}`).join('\n'));
-    if (!reply || botState.isTakenOver(groupKey)) return;
+    if (!reply) return log(`   [${subject}] model returned an empty reply`);
+    if (ownerQuiet || botState.isTakenOver(stopKey)) return log(`   [${subject}] reply discarded: bot was stopped meanwhile`);
     await sendHuman(jid, `${GROUP_LABEL}${reply}`);
     appendHistory(groupKey, 'assistant', reply);
     lastGroupReply.set(jid, Date.now());
