@@ -17,3 +17,4 @@ logs/
 # Local tooling
 .planning/
 config/groups.json
+config/google-credentials.json

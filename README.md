@@ -68,6 +68,25 @@ Send these in your **Message yourself** chat:
 
 If you type in any chat yourself, the bot leaves that chat alone for `TAKEOVER_PAUSE_MINUTES` (default 60).
 
+## Email & calendar (Gmail + Google Calendar)
+
+Only you can use this, from **Message yourself** or your own "bot …" messages in a group. The bot always shows a draft first and does nothing until you reply **yes**. It never invents email addresses: if you don't write the address, it asks for it.
+
+Examples:
+- `send an email to alex@example.com saying I'll be 30 minutes late tomorrow`
+- `add movie night at Hana's to my calendar tonight 8:45pm at D61 Stone Park`
+- `remind me to call mom tomorrow at 5pm`
+
+One-time setup (about 10 minutes):
+1. Go to https://console.cloud.google.com, sign in with the Google account you want to use, and create a project (e.g. "whatsapp-bot").
+2. **APIs & Services → Library**: enable **Google Calendar API** and **Gmail API**.
+3. **APIs & Services → OAuth consent screen**: choose *Internal* (Google Workspace) or *External*. If you chose External, add your own email under **Test users**.
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID → Desktop app**. Download the JSON and save it as `config/google-credentials.json`.
+5. Run `npm run google-auth`, sign in in the browser, and allow access.
+6. Run `pm2 restart whatsapp-persona-bot`.
+
+Both files are git-ignored. To disconnect, delete `data/google-token.json` and remove the app at https://myaccount.google.com/permissions.
+
 ## Settings (`.env`)
 
 See `.env.example`: quiet hours, daily reply cap, burst wait, takeover time, model, and `DISCLOSE_AI` (openly introduce itself as your assistant).

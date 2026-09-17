@@ -13,7 +13,8 @@
     "dry-run": "node src/index.js --dry-run",
     "persona": "node scripts/build-persona.js",
     "try": "node scripts/try-reply.js",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "google-auth": "node scripts/google-auth.js"
   },
   "dependencies": {
     "baileys": "7.0.0-rc14",

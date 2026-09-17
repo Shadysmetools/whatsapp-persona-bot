@@ -1,6 +1,6 @@
 import { config } from './config.js';
 
-export async function chat(messages, { maxTokens = 400, temperature = 0.8 } = {}) {
+export async function chat(messages, { maxTokens = 400, temperature = 0.8, json = false } = {}) {
   const res = await fetch(`${config.ollamaUrl}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -8,6 +8,7 @@ export async function chat(messages, { maxTokens = 400, temperature = 0.8 } = {}
       model: config.model,
       messages,
       stream: false,
+      ...(json ? { format: 'json' } : {}),
       // Keep the model loaded forever: a cold load takes ~80s, a warm reply ~8s.
       keep_alive: -1,
       options: { num_ctx: config.numCtx, num_predict: maxTokens, temperature },

@@ -19,6 +19,7 @@ import qrcode from 'qrcode-terminal';
 import { composeReply, planQueries, researchQuery, TASK_RE } from './agent.js';
 import { generateImage, IMAGE_RE, imagePrompt } from './images.js';
 import { research } from './research.js';
+import { ACTION_RE, confirmAction, draftAction } from './actions.js';
 import {
   downloadImages,
   extractPlaces,
@@ -288,6 +289,13 @@ async function onGroupMessage(msg, type) {
   log(`[${subject}] ${name}: ${text}`);
 
   // Only you can change the bot's personality from inside a group.
+  // Only you: email / calendar requests from the group are drafted privately in your self-chat.
+  if (key.fromMe && /\bbot\b/i.test(text) && ACTION_RE.test(text)) {
+    await sendHuman(jid, `${GROUP_LABEL}on it Shady, sent you the draft privately to confirm 📨`);
+    await handleOwnerAction(text, loadHistory(groupKey));
+    return;
+  }
+
   // Only you: "bot group pic: <description>", or send/reply to a photo with "bot group pic".
   const picCmd = key.fromMe && text.match(GROUP_PIC_RE);
   if (picCmd) {
@@ -488,6 +496,24 @@ async function replyToGroup(jid) {
   }
 }
 
+/** Email / calendar requests and their yes/no confirmations. Always answered privately in your self-chat. */
+async function handleOwnerAction(text, history = loadHistory('owner')) {
+  try {
+    const confirmation = await confirmAction(text);
+    if (confirmation) {
+      await notifyOwner(confirmation);
+      return true;
+    }
+    if (!ACTION_RE.test(text)) return false;
+    log('   owner action requested, drafting...');
+    await notifyOwner(await draftAction(text, history));
+  } catch (err) {
+    log('owner action failed:', err.message);
+    await notifyOwner(`Couldn't do that: ${err.message}`);
+  }
+  return true;
+}
+
 /** Your "Message yourself" chat is a private chat with the bot: chat, search, images. */
 const OWNER_CHAT = {
   mode: 'always',
@@ -544,7 +570,10 @@ async function onMessage(msg, type) {
     if (botSentIds.has(key.id) || type !== 'notify') return;
     if (isSelfChat(jid)) {
       if (text.startsWith('!')) await handleCommand(text);
-      else if (text && !text.startsWith('🤖')) await replyToOwner(jid, key, text);
+      else if (text && !text.startsWith('🤖')) {
+        const handled = await handleOwnerAction(text);
+        if (!handled) await replyToOwner(jid, key, text);
+      }
       return;
     }
     // You typed in this chat yourself: step aside.
