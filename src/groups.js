@@ -20,6 +20,11 @@ export const STOP_RE =
 
 export const GROUP_LABEL = '🤖 ';
 
+/** In "mention" groups the bot only speaks when called like this. */
+export const SUMMON_RE = /(^|\s)(@bot|hey bot|hi bot|ya bot|yo bot|ya botty)\b|^\s*bot\s*[,:!?]|🤖|(يا بوت)/iu;
+
+export const START_RE = /\b(start bot|bot start|come back bot|bot come back|rga3 ya bot|erga3 ya bot)\b|(ارجع يا بوت)/i;
+
 export async function composeGroupReply(group, subject, history, burst) {
   const owner = config.ownerName;
   const { style } = loadPersona();

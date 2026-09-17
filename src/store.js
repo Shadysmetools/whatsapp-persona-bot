@@ -41,6 +41,10 @@ export const botState = {
   isTakenOver(number) {
     return (state.takeovers[number] ?? 0) > Date.now();
   },
+  release(key) {
+    delete state.takeovers[key];
+    save();
+  },
   releaseAll() {
     state.takeovers = {};
     save();

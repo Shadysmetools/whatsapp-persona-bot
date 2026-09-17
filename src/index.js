@@ -17,7 +17,7 @@ import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { composeReply } from './agent.js';
 import { breaksPersona, isUpset, needsHuman } from './bot-question.js';
-import { composeGroupReply, findGroupConfig, GROUP_LABEL, STOP_RE } from './groups.js';
+import { composeGroupReply, findGroupConfig, GROUP_LABEL, START_RE, STOP_RE, SUMMON_RE } from './groups.js';
 import { config, loadAllowlist } from './config.js';
 import { isQuietHours, rand, seenDelayMs, sleep, splitReply, typingMs } from './humanize.js';
 import { ensureModel } from './llm.js';
@@ -216,7 +216,7 @@ function schedule(jid) {
 const groupSubjects = new Map();
 const groupPending = new Map(); // jid -> { group, subject, messages: [], timer }
 const GROUP_BURST_MS = 20_000;
-const GROUP_MIN_GAP_MS = 60_000;
+const GROUP_MIN_GAP_MS = 15_000;
 const GROUP_STOP_MS = 12 * 60 * 60_000;
 const lastGroupReply = new Map();
 
@@ -239,39 +239,45 @@ async function onGroupMessage(msg, type) {
   if (!group) return;
   const groupKey = `group-${digits(jid)}`;
 
-  if (key.fromMe) {
-    if (botSentIds.has(key.id) || type !== 'notify') return;
+  const stopKey = `${groupKey}-stop`;
+  const mentionOnly = group.mode === 'mention';
+  if (type !== 'notify' || !text || botSentIds.has(key.id)) return;
+  const name = key.fromMe ? config.ownerName : msg.pushName || 'someone';
+
+  if (key.fromMe && !(mentionOnly && SUMMON_RE.test(text))) {
+    if (mentionOnly) return appendHistory(groupKey, 'user', `${name}: ${text}`);
     botState.takeOver(groupKey);
     groupPending.delete(jid);
     log(`you wrote in ${subject} yourself - bot quiet there for ${config.takeoverMs / 60_000} min`);
     return;
   }
-  if (type !== 'notify' || !text) return;
-  const name = msg.pushName || 'someone';
   log(`[${subject}] ${name}: ${text}`);
 
   if (STOP_RE.test(text)) {
-    // Always honour a stop, even if the bot was already quiet because you had just posted.
-    const wasQuiet = botState.isTakenOver(groupKey);
-    botState.takeOver(groupKey, GROUP_STOP_MS);
+    const wasStopped = botState.isTakenOver(stopKey);
+    botState.takeOver(stopKey, GROUP_STOP_MS);
     groupPending.delete(jid);
-    if (!wasQuiet) await sendHuman(jid, `${GROUP_LABEL}ok ok I'm leaving 😭👋 (${config.ownerName}'s bot, off for 12h)`);
-    await notifyOwner(`${name} asked the bot to stop in ${subject}. It said bye and is off there for 12 hours (!resume to undo).`);
+    if (!wasStopped) await sendHuman(jid, `${GROUP_LABEL}ok ok I'm leaving 😭👋 (${config.ownerName}'s bot, off for 12h - say "start bot" to bring me back)`);
+    await notifyOwner(`${name} asked the bot to stop in ${subject}. It's off there for 12 hours unless someone says "start bot".`);
     return;
   }
+  if (START_RE.test(text)) botState.release(stopKey);
 
-  const entry = groupPending.get(jid) ?? { group, subject, groupKey, messages: [] };
+  const called = SUMMON_RE.test(text) || START_RE.test(text);
+  if (mentionOnly && !called) return appendHistory(groupKey, 'user', `${name}: ${text}`);
+
+  const entry = groupPending.get(jid) ?? { group, subject, groupKey, stopKey, messages: [] };
   entry.messages.push({ key, name, text, receivedAt: Date.now() });
   groupPending.set(jid, entry);
   clearTimeout(entry.timer);
-  entry.timer = setTimeout(() => replyToGroup(jid), GROUP_BURST_MS);
+  entry.timer = setTimeout(() => replyToGroup(jid), mentionOnly ? 4_000 : GROUP_BURST_MS);
 }
 
 async function replyToGroup(jid) {
   const entry = groupPending.get(jid);
   if (!entry || busy.has(jid)) return;
-  const { group, subject, groupKey } = entry;
-  if (botState.paused || botState.isTakenOver(groupKey) || isQuietHours() || botState.capReached()) return;
+  const { group, subject, groupKey, stopKey } = entry;
+  if (botState.paused || botState.isTakenOver(groupKey) || botState.isTakenOver(stopKey) || isQuietHours() || botState.capReached()) return;
   const wait = (lastGroupReply.get(jid) ?? 0) + GROUP_MIN_GAP_MS - Date.now();
   if (wait > 0) {
     entry.timer = setTimeout(() => replyToGroup(jid), wait);
@@ -293,7 +299,7 @@ async function replyToGroup(jid) {
     }
 
     const history = loadHistory(groupKey);
-    await sock.readMessages(burst.map((m) => m.key));
+    await sock.readMessages(burst.filter((m) => !m.key.fromMe).map((m) => m.key));
     const stopTyping = keepTyping(jid);
     let reply;
     try {
