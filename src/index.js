@@ -277,6 +277,10 @@ async function onGroupMessage(msg, type) {
   // Only you: "bot group pic: <description>", or send/reply to a photo with "bot group pic".
   const picCmd = key.fromMe && text.match(GROUP_PIC_RE);
   if (picCmd) {
+    const picDesc = (picCmd.groups.desc ?? picCmd.groups.desc2 ?? picCmd.groups.desc3 ?? '')
+      .replace(/^(a|an|the)\s+(picture|photo|image)\s+of\s+/i, '')
+      .replace(/[?.!]+$/, '')
+      .trim();
     try {
       const m = normalizeMessageContent(msg.message);
       const quoted = m?.extendedTextMessage?.contextInfo;
@@ -287,8 +291,8 @@ async function onGroupMessage(msg, type) {
       } else if (quoted?.quotedMessage?.imageMessage) {
         const quotedMsg = { key: { remoteJid: jid, id: quoted.stanzaId, participant: quoted.participant }, message: quoted.quotedMessage };
         image = await downloadMediaMessage(quotedMsg, 'buffer', {});
-      } else if (picCmd.groups.desc.trim()) {
-        what = await imagePrompt(picCmd.groups.desc.trim());
+      } else if (picDesc) {
+        what = await imagePrompt(picDesc);
         log(`   [${subject}] generating group picture: ${what}`);
         image = await generateImage(what);
       } else {

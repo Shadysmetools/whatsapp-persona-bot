@@ -36,7 +36,8 @@ export function setBotPersona(text) {
 }
 
 /** Owner writing "bot group pic: <description>" or sending/replying to a photo with "bot group pic". */
-export const GROUP_PIC_RE = /^\s*!?\s*bot\s+group\s*(pic|picture|photo|image|icon|sora)\s*[:=]?\s*(?<desc>.*)$/is;
+export const GROUP_PIC_RE =
+  /\bbot\b.*?\b(change|set|update|put|make|replace|use|8ayar|ghayar|7ot)\b.*?\bgroup\s*(pic|picture|photo|image|icon|sora|dp|profile)\b\s*(to|with|into|as|:|=|le|l)?\s*(?<desc>.*)$|\bbot\b.*?\b(8ayar|ghayar|change|set)\s+(el\s+)?(pic|picture|photo|image|sora)\s+(el\s+)?group\b\s*(to|with|into|as|:|=|le|l)?\s*(?<desc3>.*)$|^\s*!?\s*bot\s+group\s*(?:pic|picture|photo|image|icon|sora)\s*[:=]?\s*(?<desc2>.*)$/is;
 
 /** Owner writing "bot persona: pirate" (or "bot persona reset") in a group. */
 export const PERSONA_CMD_RE = /^\s*!?\s*bot\s+persona\s*[:=]?\s*(.*)$/is;
