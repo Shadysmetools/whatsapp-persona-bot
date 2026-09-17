@@ -16,7 +16,7 @@ import path from 'node:path';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { composeReply } from './agent.js';
-import { asksIfBot } from './bot-question.js';
+import { breaksPersona, needsHuman } from './bot-question.js';
 import { config, loadAllowlist } from './config.js';
 import { isQuietHours, rand, seenDelayMs, sleep, splitReply, typingMs } from './humanize.js';
 import { ensureModel } from './llm.js';
@@ -141,13 +141,14 @@ async function replyTo(jid) {
     const history = loadHistory(number);
     log(`<- ${contact.name || number}: ${incoming}`);
 
-    // Asked if they're talking to a bot: don't answer at all, hand the chat to you.
-    if (asksIfBot(incoming)) {
+    // Bot questions, anger or urgency: don't answer at all, hand the chat to you.
+    const humanReason = needsHuman(incoming);
+    if (humanReason) {
       appendHistory(number, 'user', incoming);
       botState.takeOver(number);
-      log(`   ${contact.name || number} asked if this is a bot - handing chat to you`);
+      log(`   ${contact.name || number} is ${humanReason} - handing chat to you`);
       await notifyOwner(
-        `⚠️ ${contact.name || number} is asking if they're talking to a bot. I did NOT reply and stepped out of that chat for ${config.takeoverMs / 60_000} min - please answer yourself.\n\nThey said: ${incoming}`,
+        `⚠️ ${contact.name || number} is ${humanReason}. I did NOT reply and stepped out of that chat for ${config.takeoverMs / 60_000} min - please answer yourself.\n\nThey said: ${incoming}`,
       );
       return;
     }
@@ -171,6 +172,14 @@ async function replyTo(jid) {
     log(`-> ${contact.name || number} (${thinkSecs}s): ${reply.text}${reply.escalation ? `  [ESCALATE: ${reply.escalation}]` : ''}`);
 
     appendHistory(number, 'user', incoming);
+    if (reply.text && breaksPersona(reply.text)) {
+      botState.takeOver(number);
+      log('   reply talked about you in third person - not sent');
+      await notifyOwner(
+        `⚠️ I almost sent ${contact.name || number} a reply that didn't sound like you, so I sent nothing and stepped out of that chat.\n\nThey said: ${incoming}\n\nBlocked draft: ${reply.text}`,
+      );
+      return;
+    }
     if (reply.text) {
       if (!config.dryRun) {
         if (botState.isTakenOver(number)) return log('   you took over this chat, discarding reply');
