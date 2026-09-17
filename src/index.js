@@ -60,8 +60,9 @@ function selfJid() {
   return jidNormalizedUser(sock.user.id);
 }
 
+// Notes go only to your own "Message yourself" chat, so they're sent even in dry-run.
 async function notifyOwner(text) {
-  if (config.dryRun) return log('[owner note]', text);
+  log('[owner note]', text);
   const sent = await sock.sendMessage(selfJid(), { text: `🤖 ${text}` });
   if (sent?.key?.id) botSentIds.add(sent.key.id);
 }
