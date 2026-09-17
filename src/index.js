@@ -1,6 +1,7 @@
 import makeWASocket, {
   Browsers,
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestBaileysVersion,
   isJidBroadcast,
   isJidGroup,
@@ -24,6 +25,7 @@ import {
   findGroupConfig,
   getBotPersona,
   GROUP_LABEL,
+  GROUP_PIC_RE,
   PERSONA_CMD_RE,
   setBotPersona,
   START_RE,
@@ -272,6 +274,36 @@ async function onGroupMessage(msg, type) {
   log(`[${subject}] ${name}: ${text}`);
 
   // Only you can change the bot's personality from inside a group.
+  // Only you: "bot group pic: <description>", or send/reply to a photo with "bot group pic".
+  const picCmd = key.fromMe && text.match(GROUP_PIC_RE);
+  if (picCmd) {
+    try {
+      const m = normalizeMessageContent(msg.message);
+      const quoted = m?.extendedTextMessage?.contextInfo;
+      let image;
+      let what = 'your photo';
+      if (m?.imageMessage) {
+        image = await downloadMediaMessage(msg, 'buffer', {});
+      } else if (quoted?.quotedMessage?.imageMessage) {
+        const quotedMsg = { key: { remoteJid: jid, id: quoted.stanzaId, participant: quoted.participant }, message: quoted.quotedMessage };
+        image = await downloadMediaMessage(quotedMsg, 'buffer', {});
+      } else if (picCmd.groups.desc.trim()) {
+        what = await imagePrompt(picCmd.groups.desc.trim());
+        log(`   [${subject}] generating group picture: ${what}`);
+        image = await generateImage(what);
+      } else {
+        await sendHuman(jid, `${GROUP_LABEL}tell me what to draw ("bot group pic: matcha robot") or send a photo with "bot group pic" 📸`);
+        return;
+      }
+      await sock.updateProfilePicture(jid, image);
+      await sendHuman(jid, `${GROUP_LABEL}new group picture set 🎨 (${what})`);
+    } catch (err) {
+      log(`   group picture failed: ${err.message}`);
+      await sendHuman(jid, `${GROUP_LABEL}I couldn't change the group picture 😭 ${/forbidden|not-authorized|403|401/i.test(err.message) ? 'only admins can do that' : 'something went wrong'}`);
+    }
+    return;
+  }
+
   const personaCmd = key.fromMe && text.match(PERSONA_CMD_RE);
   if (personaCmd) {
     const value = personaCmd[1].trim();

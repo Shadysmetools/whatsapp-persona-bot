@@ -35,6 +35,9 @@ export function setBotPersona(text) {
   else if (fs.existsSync(botPersonaFile)) fs.unlinkSync(botPersonaFile);
 }
 
+/** Owner writing "bot group pic: <description>" or sending/replying to a photo with "bot group pic". */
+export const GROUP_PIC_RE = /^\s*!?\s*bot\s+group\s*(pic|picture|photo|image|icon|sora)\s*[:=]?\s*(?<desc>.*)$/is;
+
 /** Owner writing "bot persona: pirate" (or "bot persona reset") in a group. */
 export const PERSONA_CMD_RE = /^\s*!?\s*bot\s+persona\s*[:=]?\s*(.*)$/is;
 
