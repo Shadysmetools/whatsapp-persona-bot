@@ -19,6 +19,17 @@ import qrcode from 'qrcode-terminal';
 import { composeReply, planQueries, researchQuery, TASK_RE } from './agent.js';
 import { generateImage, IMAGE_RE, imagePrompt } from './images.js';
 import { research } from './research.js';
+import {
+  downloadImages,
+  extractPlaces,
+  findPhones,
+  geocode,
+  imageSearch,
+  LOCATION_RE,
+  mapsLink,
+  MENU_RE,
+  PHONE_RE,
+} from './places.js';
 import { breaksPersona, isUpset, needsHuman } from './bot-question.js';
 import {
   composeGroupReply,
@@ -342,6 +353,56 @@ async function onGroupMessage(msg, type) {
   entry.timer = setTimeout(() => replyToGroup(jid), mentionOnly ? 4_000 : GROUP_BURST_MS);
 }
 
+/**
+ * Menu photos, location pins and phone numbers for places people ask about.
+ * Sends the media straight to the chat and returns notes for the text reply.
+ */
+async function sendPlaceInfo(jid, subject, text, history) {
+  const wantsMenu = MENU_RE.test(text);
+  const wantsLocation = LOCATION_RE.test(text);
+  const wantsPhone = PHONE_RE.test(text);
+  if (!wantsMenu && !wantsLocation && !wantsPhone) return '';
+
+  const places = await extractPlaces(text, history);
+  log(`   [${subject}] place info for: ${places.map((p) => p.name).join(', ') || 'nothing found'}`);
+  const notes = [];
+  for (const place of places) {
+    const lines = [`Place: ${place.name} (${place.area})`, `Google Maps: ${mapsLink(place.name, place.area)}`];
+    if (wantsMenu) {
+      const images = await downloadImages(await imageSearch(`${place.name} menu Egypt`).catch(() => []), 2);
+      for (const [i, image] of images.entries()) {
+        const sent = await sock.sendMessage(jid, {
+          image,
+          caption: `${GROUP_LABEL}${place.name} menu ${i + 1}/${images.length} (from the web, prices may be outdated)`,
+        });
+        if (sent?.key?.id) botSentIds.add(sent.key.id);
+      }
+      lines.push(images.length ? `Sent ${images.length} menu photo(s) in the chat.` : 'No menu photos found online.');
+    }
+    if (wantsLocation) {
+      const geo = await geocode(place.name, place.area).catch(() => null);
+      if (geo) {
+        const sent = await sock.sendMessage(jid, {
+          location: { degreesLatitude: geo.lat, degreesLongitude: geo.lon, name: place.name, address: geo.address },
+        });
+        if (sent?.key?.id) botSentIds.add(sent.key.id);
+        lines.push(`Sent a location pin: ${geo.address} (from OpenStreetMap, double-check on Google Maps).`);
+      } else {
+        lines.push('No exact pin found on OpenStreetMap; share the Google Maps link instead.');
+      }
+    }
+    if (wantsPhone) {
+      const found = await research(`${place.name} ${place.area} phone number hotline`, { pages: 2, chars: 1500 }).catch(() => '');
+      const phones = findPhones(found);
+      lines.push(phones.length ? `Phone numbers found online: ${phones.join(', ')}` : 'No phone number found online.');
+    }
+    notes.push(lines.join('\n'));
+  }
+  return notes.length
+    ? `# Place info you just looked up (include the Google Maps links and any phone numbers exactly as written)\n${notes.join('\n\n')}`
+    : '';
+}
+
 async function replyToGroup(jid) {
   const entry = groupPending.get(jid);
   if (!entry) return;
@@ -390,17 +451,21 @@ async function replyToGroup(jid) {
           log(`   image failed: ${err.message}`);
         }
       }
-      const task = TASK_RE.test(combined);
-      let notes = '';
+      const placeNotes = await sendPlaceInfo(jid, subject, combined, history).catch((err) => {
+        log(`   place info failed: ${err.message}`);
+        return '';
+      });
+      const task = TASK_RE.test(combined) || Boolean(placeNotes);
+      let notes = placeNotes;
       if (task) {
         // Real request: several focused searches, fewer characters per page to fit the model's context.
         const queries = await planQueries(combined, history).catch(() => []);
         log(`   [${subject}] helper mode, searching: ${queries.join(' | ')}`);
         const results = await Promise.all(queries.map((q) => research(q, { pages: 2, chars: 1200 }).catch(() => '')));
-        notes = results.filter(Boolean).join('\n\n---\n\n');
+        notes = [placeNotes, ...results].filter(Boolean).join('\n\n---\n\n');
       } else {
         const query = await researchQuery(combined, history).catch(() => null);
-        notes = query ? await research(query).catch(() => '') : '';
+        notes = [placeNotes, query ? await research(query).catch(() => '') : ''].filter(Boolean).join('\n\n---\n\n');
         if (query) log(`   [${subject}] researched: "${query}"`);
       }
       reply = await composeGroupReply(group, subject, history.slice(task ? -6 : 0), burst, notes, task);
@@ -446,8 +511,9 @@ async function replyToOwner(jid, key, text) {
         if (sent?.key?.id) botSentIds.add(sent.key.id);
       }
     }
+    const placeNotes = await sendPlaceInfo(jid, 'owner chat', text, history).catch(() => '');
     const query = await researchQuery(text, history).catch(() => null);
-    const notes = query ? await research(query).catch(() => '') : '';
+    const notes = [placeNotes, query ? await research(query).catch(() => '') : ''].filter(Boolean).join('\n\n---\n\n');
     if (query) log(`   [owner chat] researched: "${query}"`);
     const burst = [{ key, name: config.ownerName, text }];
     const reply = await composeGroupReply(OWNER_CHAT, 'private chat', history, burst, notes);
