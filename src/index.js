@@ -244,7 +244,7 @@ async function onGroupMessage(msg, type) {
   if (type !== 'notify' || !text || botSentIds.has(key.id)) return;
   const name = key.fromMe ? config.ownerName : msg.pushName || 'someone';
 
-  if (key.fromMe && !(mentionOnly && SUMMON_RE.test(text))) {
+  if (key.fromMe && group.mode !== 'always' && !(mentionOnly && SUMMON_RE.test(text))) {
     if (mentionOnly) return appendHistory(groupKey, 'user', `${name}: ${text}`);
     botState.takeOver(groupKey);
     groupPending.delete(jid);
@@ -275,10 +275,11 @@ async function onGroupMessage(msg, type) {
 
 async function replyToGroup(jid) {
   const entry = groupPending.get(jid);
-  if (!entry || busy.has(jid)) return;
+  if (!entry) return;
+  if (busy.has(jid)) return log('   group reply skipped: still busy with previous reply');
   const { group, subject, groupKey, stopKey } = entry;
   // In mention mode someone explicitly called the bot, so your own recent posts don't silence it.
-  const ownerQuiet = group.mode !== 'mention' && botState.isTakenOver(groupKey);
+  const ownerQuiet = !['mention', 'always'].includes(group.mode) && botState.isTakenOver(groupKey);
   if (botState.paused || ownerQuiet || botState.isTakenOver(stopKey) || isQuietHours() || botState.capReached()) return;
   const wait = (lastGroupReply.get(jid) ?? 0) + GROUP_MIN_GAP_MS - Date.now();
   if (wait > 0) {
@@ -301,7 +302,9 @@ async function replyToGroup(jid) {
     }
 
     const history = loadHistory(groupKey);
-    await sock.readMessages(burst.filter((m) => !m.key.fromMe).map((m) => m.key));
+    log(`   [${subject}] writing a reply to ${burst.length} message(s)...`);
+    // Don't await: read receipts in groups can hang and would block every future reply.
+    sock.readMessages(burst.filter((m) => !m.key.fromMe).map((m) => m.key)).catch((err) => log('   read receipt failed:', err.message));
     const stopTyping = keepTyping(jid);
     let reply;
     try {
