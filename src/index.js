@@ -250,10 +250,12 @@ async function onGroupMessage(msg, type) {
   const name = msg.pushName || 'someone';
   log(`[${subject}] ${name}: ${text}`);
 
-  if (STOP_RE.test(text) && !botState.isTakenOver(groupKey)) {
+  if (STOP_RE.test(text)) {
+    // Always honour a stop, even if the bot was already quiet because you had just posted.
+    const wasQuiet = botState.isTakenOver(groupKey);
     botState.takeOver(groupKey, GROUP_STOP_MS);
     groupPending.delete(jid);
-    await sendHuman(jid, `${GROUP_LABEL}ok ok I'm leaving 😭👋 (${config.ownerName}'s bot, off for 12h)`);
+    if (!wasQuiet) await sendHuman(jid, `${GROUP_LABEL}ok ok I'm leaving 😭👋 (${config.ownerName}'s bot, off for 12h)`);
     await notifyOwner(`${name} asked the bot to stop in ${subject}. It said bye and is off there for 12 hours (!resume to undo).`);
     return;
   }
