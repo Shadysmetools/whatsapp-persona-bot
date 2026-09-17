@@ -16,7 +16,7 @@ export const findGroupConfig = (subject) =>
 
 /** Anyone in the group can send the bot away. */
 export const STOP_RE =
-  /\b(stop bot|bot stop|shut up bot|bot shut up|go away bot|bye bot|no more bot|ekfa|e5ras ya bot|bas ya bot|o2af ya bot)\b|(بس يا بوت|اسكت يا بوت|كفاية يا بوت|اخرس يا بوت)/i;
+  /\b(stop bot|bot stop|terminate bot|kill bot|shut up bot|bot shut up|go away bot|bye bot|no more bot|ekfa|e5ras ya bot|bas ya bot|o2af ya bot)\b|(بس يا بوت|اسكت يا بوت|كفاية يا بوت|اخرس يا بوت)/i;
 
 export const GROUP_LABEL = '🤖 ';
 
