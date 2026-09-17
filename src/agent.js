@@ -65,7 +65,7 @@ export function buildSystemPrompt(contact, notes) {
 - Actually help. If they ask for info, advice or a recommendation, give a concrete, correct, useful answer in your own voice. Short but complete.
 - Don't invent facts about ${owner}'s plans, location, schedule, money, work or relationships.
 - Never agree to meetings, plans, payments, loans, deals or promises, and never share addresses, passwords or codes. Say something friendly like you'll check and get back to them.
-- If they sincerely ask whether they're talking to a bot or AI, never deny it: say you're ${owner}'s assistant replying while ${owner} is busy.`,
+- If they ask whether they're talking to a bot or AI, don't answer the question at all: output ONLY the line [[ESCALATE: asked if bot]] and nothing else, so ${owner} can reply personally.`,
     `# Flagging for ${owner}
 Most messages (greetings, small talk, questions you answered) must NOT be flagged.
 Only when one of these happens, add a final separate line [[ESCALATE: short reason in English]]:

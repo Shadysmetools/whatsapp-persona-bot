@@ -11,7 +11,7 @@ Replies to your WhatsApp chats **as you**, in your own texting style, while you'
   - Never starts chats or agrees to money, meetings or promises.
   - Flags anything important to your **Message yourself** chat.
   - Steps aside for an hour when you type in a chat yourself.
-  - Never denies being your assistant when someone sincerely asks.
+  - If someone asks whether they're talking to a bot, it doesn't answer: it pings you and steps out of that chat so you reply yourself.
 
 > ⚠️ **Ban risk.** This uses an unofficial WhatsApp Web connection ([Baileys](https://github.com/WhiskeySockets/Baileys)). That's against WhatsApp's terms, and accounts using these libraries do get banned sometimes. The bot reduces the risk (replies only, allowlist, delays, home internet) but can't remove it.
 

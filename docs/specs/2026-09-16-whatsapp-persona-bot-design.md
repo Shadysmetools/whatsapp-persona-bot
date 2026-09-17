@@ -21,7 +21,7 @@ Auto-reply on the owner's personal WhatsApp number, in the owner's persona, whil
   - Owner takeover: a `fromMe` message of type `notify` in a chat pauses the bot there. The bot's own sends arrive as `append` and are also tracked by ID.
   - Never commits to money, meetings or promises.
   - `[[ESCALATE: …]]` sends a note to the owner's self chat.
-  - Never denies being an assistant when sincerely asked.
+  - If asked whether it is a bot it sends nothing, notifies the owner and steps out of the chat.
 - Failure: if Ollama is missing, the bot exits loudly at startup. A reply error notifies the owner and sends nothing to the contact. On logout it exits with code 2, which pm2 does not restart.
 
 ## Out of scope (v1)

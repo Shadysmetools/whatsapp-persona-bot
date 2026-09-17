@@ -11,9 +11,12 @@ import makeWASocket, {
   normalizeMessageContent,
   useMultiFileAuthState,
 } from 'baileys';
+import fs from 'node:fs';
+import path from 'node:path';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import { composeReply } from './agent.js';
+import { asksIfBot } from './bot-question.js';
 import { config, loadAllowlist } from './config.js';
 import { isQuietHours, rand, seenDelayMs, sleep, splitReply, typingMs } from './humanize.js';
 import { ensureModel } from './llm.js';
@@ -138,6 +141,17 @@ async function replyTo(jid) {
     const history = loadHistory(number);
     log(`<- ${contact.name || number}: ${incoming}`);
 
+    // Asked if they're talking to a bot: don't answer at all, hand the chat to you.
+    if (asksIfBot(incoming)) {
+      appendHistory(number, 'user', incoming);
+      botState.takeOver(number);
+      log(`   ${contact.name || number} asked if this is a bot - handing chat to you`);
+      await notifyOwner(
+        `⚠️ ${contact.name || number} is asking if they're talking to a bot. I did NOT reply and stepped out of that chat for ${config.takeoverMs / 60_000} min - please answer yourself.\n\nThey said: ${incoming}`,
+      );
+      return;
+    }
+
     if (!config.dryRun) {
       await sock.sendPresenceUpdate('available');
       await sock.readMessages(batch.map((m) => m.key));
@@ -166,6 +180,7 @@ async function replyTo(jid) {
       appendHistory(number, 'assistant', reply.text);
       botState.countReply();
     }
+    if (reply.escalation && !reply.text) botState.takeOver(number); // nothing sent: let you answer
     if (reply.escalation) {
       await notifyOwner(
         `${contact.name || number} needs you: ${reply.escalation}\n\nThey said: ${incoming}\n\nI replied: ${reply.text || '(nothing)'}`,
@@ -224,6 +239,38 @@ async function onMessage(msg, type) {
   if (!busy.has(jid)) schedule(jid);
 }
 
+/**
+ * Messages you explicitly ask the bot to send: drop a JSON file
+ * { "number": "2012...", "text": "..." } into data/outbox/ and it's sent once, then deleted.
+ */
+const outboxDir = path.join(config.dataDir, 'outbox');
+fs.mkdirSync(outboxDir, { recursive: true });
+let outboxBusy = false;
+
+async function processOutbox() {
+  if (outboxBusy || !sock?.user || config.dryRun) return;
+  outboxBusy = true;
+  try {
+    for (const file of fs.readdirSync(outboxDir).filter((f) => f.endsWith('.json'))) {
+      const full = path.join(outboxDir, file);
+      const { number, text } = JSON.parse(fs.readFileSync(full, 'utf8'));
+      fs.unlinkSync(full); // delete first so a crash never sends twice
+      const [result] = await sock.onWhatsApp(number);
+      if (!result?.exists) {
+        await notifyOwner(`Outbox: ${number} is not on WhatsApp, message not sent.`);
+        continue;
+      }
+      await sendHuman(result.jid, text);
+      appendHistory(number, 'assistant', text);
+      log(`-> ${number} (outbox): ${text}`);
+    }
+  } catch (err) {
+    log('outbox error:', err.message);
+  } finally {
+    outboxBusy = false;
+  }
+}
+
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
   const { version } = await fetchLatestBaileysVersion();
@@ -280,6 +327,8 @@ log('model ready');
 await start();
 
 // Messages held back by quiet hours, a pause or the daily cap get picked up once that ends.
+setInterval(processOutbox, 5_000);
+
 // Staggered so several held-back chats don't all get answered in the same second.
 setInterval(() => {
   for (const jid of pending.keys()) {
