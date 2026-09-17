@@ -262,8 +262,22 @@ async function processOutbox() {
   try {
     for (const file of fs.readdirSync(outboxDir).filter((f) => f.endsWith('.json'))) {
       const full = path.join(outboxDir, file);
-      const { number, text } = JSON.parse(fs.readFileSync(full, 'utf8'));
+      const { number, group, text } = JSON.parse(fs.readFileSync(full, 'utf8'));
       fs.unlinkSync(full); // delete first so a crash never sends twice
+      if (group) {
+        // Group sends are one-off messages you asked for; the bot never replies in groups.
+        const groups = Object.values(await sock.groupFetchAllParticipating());
+        const matches = groups.filter((g) => g.subject?.toLowerCase().includes(group.toLowerCase()));
+        if (matches.length !== 1) {
+          await notifyOwner(
+            `Outbox: found ${matches.length} groups matching "${group}" (${matches.map((g) => g.subject).join(', ') || 'none'}), message not sent.`,
+          );
+          continue;
+        }
+        await sendHuman(matches[0].id, text);
+        log(`-> group ${matches[0].subject} (outbox): ${text}`);
+        continue;
+      }
       const [result] = await sock.onWhatsApp(number);
       if (!result?.exists) {
         await notifyOwner(`Outbox: ${number} is not on WhatsApp, message not sent.`);
