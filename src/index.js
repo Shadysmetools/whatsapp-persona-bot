@@ -15,9 +15,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
-import { composeReply } from './agent.js';
+import { composeReply, researchQuery } from './agent.js';
+import { generateImage, IMAGE_RE, imagePrompt } from './images.js';
+import { research } from './research.js';
 import { breaksPersona, isUpset, needsHuman } from './bot-question.js';
-import { composeGroupReply, findGroupConfig, GROUP_LABEL, START_RE, STOP_RE, SUMMON_RE } from './groups.js';
+import {
+  composeGroupReply,
+  findGroupConfig,
+  getBotPersona,
+  GROUP_LABEL,
+  PERSONA_CMD_RE,
+  setBotPersona,
+  START_RE,
+  STOP_RE,
+  SUMMON_RE,
+} from './groups.js';
 import { config, loadAllowlist } from './config.js';
 import { isQuietHours, rand, seenDelayMs, sleep, splitReply, typingMs } from './humanize.js';
 import { ensureModel } from './llm.js';
@@ -81,6 +93,12 @@ async function handleCommand(text) {
     botState.setPaused(false);
     botState.releaseAll();
     return notifyOwner('Resumed, and cleared all chat takeovers.');
+  }
+  if (cmd.startsWith('!persona')) {
+    const value = text.trim().slice('!persona'.length).trim();
+    if (!value) return notifyOwner(`Group bot persona: ${getBotPersona() || 'default (funny, playful)'}\nChange: !persona <description>   Reset: !persona reset`);
+    setBotPersona(/^(reset|default|clear)$/i.test(value) ? '' : value);
+    return notifyOwner(`Group bot persona ${getBotPersona() ? `set to: ${getBotPersona()}` : 'reset to default'}`);
   }
   if (cmd === '!status') {
     const contacts = loadAllowlist();
@@ -253,6 +271,16 @@ async function onGroupMessage(msg, type) {
   }
   log(`[${subject}] ${name}: ${text}`);
 
+  // Only you can change the bot's personality from inside a group.
+  const personaCmd = key.fromMe && text.match(PERSONA_CMD_RE);
+  if (personaCmd) {
+    const value = personaCmd[1].trim();
+    setBotPersona(/^(reset|default|clear)?$/i.test(value) ? '' : value);
+    const now = getBotPersona();
+    await sendHuman(jid, `${GROUP_LABEL}${now ? `persona loaded: ${now} ✨` : 'back to my normal self 😌'}`);
+    return;
+  }
+
   if (STOP_RE.test(text)) {
     const wasStopped = botState.isTakenOver(stopKey);
     botState.takeOver(stopKey, GROUP_STOP_MS);
@@ -308,7 +336,22 @@ async function replyToGroup(jid) {
     const stopTyping = keepTyping(jid);
     let reply;
     try {
-      reply = await composeGroupReply(group, subject, history, burst);
+      const imageAsk = burst.map((m) => m.text).reverse().find((t) => IMAGE_RE.test(t) && /\bbot\b|بوت|🤖/i.test(t));
+      if (imageAsk) {
+        const prompt = await imagePrompt(imageAsk);
+        log(`   [${subject}] generating image: ${prompt}`);
+        try {
+          const image = await generateImage(prompt);
+          const sent = await sock.sendMessage(jid, { image, caption: `${GROUP_LABEL}${prompt}` });
+          if (sent?.key?.id) botSentIds.add(sent.key.id);
+        } catch (err) {
+          log(`   image failed: ${err.message}`);
+        }
+      }
+      const query = await researchQuery(combined, history).catch(() => null);
+      const notes = query ? await research(query).catch(() => '') : '';
+      if (query) log(`   [${subject}] researched: "${query}"`);
+      reply = await composeGroupReply(group, subject, history, burst, notes);
     } finally {
       stopTyping();
     }

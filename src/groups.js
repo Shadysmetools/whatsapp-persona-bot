@@ -25,12 +25,28 @@ export const SUMMON_RE = /(^|\s)(@bot|hey bot|hi bot|ya bot|yo bot|ya botty)\b|^
 
 export const START_RE = /\b(start bot|bot start|come back bot|bot come back|rga3 ya bot|erga3 ya bot)\b|(ارجع يا بوت)/i;
 
-export async function composeGroupReply(group, subject, history, burst) {
+const botPersonaFile = path.join(config.dataDir, 'bot-persona.txt');
+
+/** The bot's group personality, changeable from WhatsApp. Empty = default. */
+export const getBotPersona = () => (fs.existsSync(botPersonaFile) ? fs.readFileSync(botPersonaFile, 'utf8').trim() : '');
+
+export function setBotPersona(text) {
+  if (text) fs.writeFileSync(botPersonaFile, text.slice(0, 500));
+  else if (fs.existsSync(botPersonaFile)) fs.unlinkSync(botPersonaFile);
+}
+
+/** Owner writing "bot persona: pirate" (or "bot persona reset") in a group. */
+export const PERSONA_CMD_RE = /^\s*!?\s*bot\s+persona\s*[:=]?\s*(.*)$/is;
+
+export async function composeGroupReply(group, subject, history, burst, notes = '') {
   const owner = config.ownerName;
   const { style } = loadPersona();
+  const persona = getBotPersona();
   const system = [
     `You are ${owner}'s AI bot, openly a bot, hanging out in the WhatsApp group "${subject}" with ${owner}'s friends. ` +
       `Everyone knows you're a bot and ${owner} added you as a joke. Never pretend to be ${owner}; talk about yourself as "${owner}'s bot".`,
+    persona &&
+      `# Your current personality (set by ${owner} - fully play this character, but you're still openly ${owner}'s bot and all rules below still apply)\n${persona}`,
     group.notes && `# About this group\n${group.notes}`,
     style && `# ${owner}'s texting style (borrow the vibe, not the identity)\n${style}`,
     `# Rules
@@ -40,6 +56,8 @@ export async function composeGroupReply(group, subject, history, burst) {
 - Address people by name when it's funny.
 - Never make plans, promises or commitments for ${owner}, and never share anything private about anyone.
 - If someone asks you to leave or stop, just say a short funny goodbye.`,
+    notes &&
+      `# Web research you just did\nUse it to answer accurately and helpfully. If they asked for links, sources or "send me", paste the 1-3 most useful URLs on their own lines. You may go a bit longer than usual (up to 5 lines) when sharing info.\n${notes}`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -50,6 +68,6 @@ export async function composeGroupReply(group, subject, history, burst) {
     ...history.map(({ role, content }) => ({ role, content })),
     { role: 'user', content: `${latest}\n\n(${replyLanguageInstruction(burst.map((m) => m.text).join(' '))})` },
   ];
-  const raw = await chat(messages, { maxTokens: 150, temperature: 0.9 });
+  const raw = await chat(messages, { maxTokens: notes ? 400 : 150, temperature: 0.9 });
   return raw.replace(/^\s*(🤖\s*)?([\w' ]*bot\s*:)?\s*/i, '').trim();
 }
