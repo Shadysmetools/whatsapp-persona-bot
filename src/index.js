@@ -403,6 +403,46 @@ async function replyToGroup(jid) {
   }
 }
 
+/** Your "Message yourself" chat is a private chat with the bot: chat, search, images. */
+const OWNER_CHAT = {
+  mode: 'always',
+  notes:
+    `This is a private chat with ${config.ownerName} himself, the person who built you. Be his helpful, funny assistant. ` +
+    'Answer questions fully (up to 6 lines is fine), help with anything he asks, and share links when useful.',
+};
+
+async function replyToOwner(jid, key, text) {
+  if (busy.has('owner')) return;
+  busy.add('owner');
+  const stopTyping = keepTyping(jid);
+  try {
+    const history = loadHistory('owner');
+    if (IMAGE_RE.test(text)) {
+      const prompt = await imagePrompt(text);
+      log(`   [owner chat] generating image: ${prompt}`);
+      const image = await generateImage(prompt).catch((err) => log('   image failed:', err.message));
+      if (image) {
+        const sent = await sock.sendMessage(jid, { image, caption: `🤖 ${prompt}` });
+        if (sent?.key?.id) botSentIds.add(sent.key.id);
+      }
+    }
+    const query = await researchQuery(text, history).catch(() => null);
+    const notes = query ? await research(query).catch(() => '') : '';
+    if (query) log(`   [owner chat] researched: "${query}"`);
+    const burst = [{ key, name: config.ownerName, text }];
+    const reply = await composeGroupReply(OWNER_CHAT, 'private chat', history, burst, notes);
+    appendHistory('owner', 'user', text);
+    if (!reply) return;
+    await sendHuman(jid, `🤖 ${reply}`);
+    appendHistory('owner', 'assistant', reply);
+  } catch (err) {
+    log('owner chat failed:', err.message);
+  } finally {
+    stopTyping();
+    busy.delete('owner');
+  }
+}
+
 async function onMessage(msg, type) {
   const { key } = msg;
   const jid = key.remoteJid;
@@ -418,6 +458,7 @@ async function onMessage(msg, type) {
     if (botSentIds.has(key.id) || type !== 'notify') return;
     if (isSelfChat(jid)) {
       if (text.startsWith('!')) await handleCommand(text);
+      else if (text && !text.startsWith('🤖')) await replyToOwner(jid, key, text);
       return;
     }
     // You typed in this chat yourself: step aside.
