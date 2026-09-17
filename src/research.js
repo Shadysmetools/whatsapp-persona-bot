@@ -56,10 +56,10 @@ export async function fetchPageText(url, maxChars = 2500) {
 }
 
 /** Search, read the top pages, and return a compact notes block for the reply prompt. */
-export async function research(query) {
+export async function research(query, { pages: pageCount = 3, chars = 2500 } = {}) {
   const results = await webSearch(query);
   if (!results.length) return '';
-  const pages = await Promise.all(results.slice(0, 3).map((r) => fetchPageText(r.url)));
+  const pages = await Promise.all(results.slice(0, pageCount).map((r) => fetchPageText(r.url, chars)));
   const sources = results.map((r, i) => {
     const body = pages[i] ? `\n${pages[i]}` : '';
     return `[${i + 1}] ${r.title} (${r.url})\n${r.snippet}${body}`;

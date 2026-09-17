@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
-import { composeReply, researchQuery } from './agent.js';
+import { composeReply, planQueries, researchQuery, TASK_RE } from './agent.js';
 import { generateImage, IMAGE_RE, imagePrompt } from './images.js';
 import { research } from './research.js';
 import { breaksPersona, isUpset, needsHuman } from './bot-question.js';
@@ -390,10 +390,20 @@ async function replyToGroup(jid) {
           log(`   image failed: ${err.message}`);
         }
       }
-      const query = await researchQuery(combined, history).catch(() => null);
-      const notes = query ? await research(query).catch(() => '') : '';
-      if (query) log(`   [${subject}] researched: "${query}"`);
-      reply = await composeGroupReply(group, subject, history, burst, notes);
+      const task = TASK_RE.test(combined);
+      let notes = '';
+      if (task) {
+        // Real request: several focused searches, fewer characters per page to fit the model's context.
+        const queries = await planQueries(combined, history).catch(() => []);
+        log(`   [${subject}] helper mode, searching: ${queries.join(' | ')}`);
+        const results = await Promise.all(queries.map((q) => research(q, { pages: 2, chars: 1200 }).catch(() => '')));
+        notes = results.filter(Boolean).join('\n\n---\n\n');
+      } else {
+        const query = await researchQuery(combined, history).catch(() => null);
+        notes = query ? await research(query).catch(() => '') : '';
+        if (query) log(`   [${subject}] researched: "${query}"`);
+      }
+      reply = await composeGroupReply(group, subject, history.slice(task ? -6 : 0), burst, notes, task);
     } finally {
       stopTyping();
     }

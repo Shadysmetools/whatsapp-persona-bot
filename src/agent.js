@@ -45,6 +45,38 @@ export async function researchQuery(incoming, history) {
   return match ? match[1].trim().replace(/^["']|["']$/g, '') : null;
 }
 
+/** Real requests for help: search, recommend, plan, find, compare... */
+export const TASK_RE =
+  /\b(search|look up|google|find|recommend|recommendation|suggest|plan|planning|itinerary|what to (watch|order|eat|do)|where (to|can|should)|compare|best|review|explain|how (to|do|can)|shoof|dawar|e2tera7|2tra7)\b|(ابحث|دور|اقترح|رشح|خطة|نظم)/i;
+
+/** For a real task, ask the model for up to 3 focused web searches. */
+export async function planQueries(request, history) {
+  const recent = history
+    .slice(-4)
+    .map((m) => m.content)
+    .join('\n');
+  const answer = await chat(
+    [
+      {
+        role: 'system',
+        content:
+          'Break the request into 1-3 focused web search queries in English that together give everything needed to answer it well ' +
+          '(e.g. one for movies, one for where to stream them, one for restaurants near the location). ' +
+          'For food/delivery use queries like "best rated delivery restaurants near <place> New Cairo Talabat", ' +
+          '"<place> restaurants Google Maps reviews" or "Breadfast offers this week Egypt". ' +
+          'Add the city/country when location matters (default Egypt). Output one query per line, nothing else.',
+      },
+      { role: 'user', content: `${recent ? `Context:\n${recent}\n\n` : ''}Request:\n${request}` },
+    ],
+    { maxTokens: 80, temperature: 0 },
+  );
+  return answer
+    .split('\n')
+    .map((l) => l.replace(/^[\d.\-*\s"]+|"$/g, '').trim())
+    .filter((l) => l.length > 3)
+    .slice(0, 3);
+}
+
 export function buildSystemPrompt(contact, notes) {
   const owner = config.ownerName;
   const { aboutMe, style } = loadPersona();
