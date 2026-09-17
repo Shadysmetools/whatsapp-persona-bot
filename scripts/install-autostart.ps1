@@ -3,15 +3,15 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
-if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+if (-not (Get-Command pm2.cmd -ErrorAction SilentlyContinue)) {
     npm install -g pm2
 }
 
 Push-Location $root
 try {
-    pm2 delete whatsapp-persona-bot 2>$null
-    pm2 start ecosystem.config.cjs
-    pm2 save
+    # startOrRestart avoids the hang seen with `pm2 delete` on a fresh daemon
+    pm2.cmd startOrRestart ecosystem.config.cjs
+    pm2.cmd save
 } finally {
     Pop-Location
 }
