@@ -17,6 +17,7 @@ import { composeReply } from './agent.js';
 import { config, loadAllowlist } from './config.js';
 import { isQuietHours, rand, seenDelayMs, sleep, splitReply, typingMs } from './humanize.js';
 import { ensureModel } from './llm.js';
+import { showConnected, showQr } from './qr-page.js';
 import { appendHistory, botState, loadHistory } from './store.js';
 
 const log = (...args) => console.log(new Date().toLocaleTimeString('en-GB'), ...args);
@@ -87,9 +88,9 @@ async function handleCommand(text) {
       ].join('\n'),
     );
   }
-  if (cmd === '!help') {
-    return notifyOwner('Commands (send them in your "Message yourself" chat): !pause, !resume, !status, !help');
-  }
+  return notifyOwner(
+    `${cmd === '!help' ? '' : `Unknown command "${text.trim()}". `}Commands (send them in your "Message yourself" chat): !pause, !resume, !status, !help`,
+  );
 }
 
 async function sendHuman(jid, text) {
@@ -242,8 +243,10 @@ async function start() {
     if (qr) {
       log('Scan this QR code: WhatsApp on your phone > Settings > Linked devices > Link a device');
       qrcode.generate(qr, { small: true });
+      showQr(qr).catch((err) => log('could not open QR page:', err.message));
     }
     if (connection === 'open') {
+      showConnected(sock.user?.id);
       log(`connected as ${sock.user?.id}${config.dryRun ? ' (DRY RUN: nothing will be sent)' : ''}`);
       log(`allowlist: ${loadAllowlist().length} contact(s)`);
     }
