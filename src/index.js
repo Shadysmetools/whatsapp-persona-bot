@@ -277,7 +277,9 @@ async function replyToGroup(jid) {
   const entry = groupPending.get(jid);
   if (!entry || busy.has(jid)) return;
   const { group, subject, groupKey, stopKey } = entry;
-  if (botState.paused || botState.isTakenOver(groupKey) || botState.isTakenOver(stopKey) || isQuietHours() || botState.capReached()) return;
+  // In mention mode someone explicitly called the bot, so your own recent posts don't silence it.
+  const ownerQuiet = group.mode !== 'mention' && botState.isTakenOver(groupKey);
+  if (botState.paused || ownerQuiet || botState.isTakenOver(stopKey) || isQuietHours() || botState.capReached()) return;
   const wait = (lastGroupReply.get(jid) ?? 0) + GROUP_MIN_GAP_MS - Date.now();
   if (wait > 0) {
     entry.timer = setTimeout(() => replyToGroup(jid), wait);
