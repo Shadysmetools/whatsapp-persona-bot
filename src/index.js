@@ -48,6 +48,9 @@ const pending = new Map(); // jid -> { contact, number, messages: [], timer }
 const busy = new Set(); // jids currently being replied to
 const botSentIds = new Set();
 
+const withTimeout = (promise, ms, message) =>
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))]);
+
 const digits = (jid) => (jid ?? '').split('@')[0].split(':')[0];
 
 function textOf(msg) {
@@ -294,12 +297,14 @@ async function onGroupMessage(msg, type) {
       } else if (picDesc) {
         what = await imagePrompt(picDesc);
         log(`   [${subject}] generating group picture: ${what}`);
-        image = await generateImage(what);
+        image = await withTimeout(generateImage(what), 90_000, 'image generation took too long');
       } else {
         await sendHuman(jid, `${GROUP_LABEL}tell me what to draw ("bot group pic: matcha robot") or send a photo with "bot group pic" 📸`);
         return;
       }
-      await sock.updateProfilePicture(jid, image);
+      log(`   [${subject}] image ready (${Math.round(image.length / 1024)} KB), uploading as group picture...`);
+      await withTimeout(sock.updateProfilePicture(jid, image), 60_000, 'WhatsApp did not confirm the picture change');
+      log(`   [${subject}] group picture updated`);
       await sendHuman(jid, `${GROUP_LABEL}new group picture set 🎨 (${what})`);
     } catch (err) {
       log(`   group picture failed: ${err.message}`);
@@ -359,7 +364,8 @@ async function replyToGroup(jid) {
 
     const combined = burst.map((m) => m.text).join('\n');
     // In a group the bot is openly a bot, so bot questions and caps are fine; real anger/urgency is not.
-    if (isUpset(combined)) {
+    // Your own messages (swearing at the bot, etc.) never trigger the upset guard.
+    if (isUpset(burst.filter((m) => !m.key.fromMe).map((m) => m.text).join('\n'))) {
       botState.takeOver(groupKey);
       await notifyOwner(`⚠️ ${subject}: someone sounds upset or urgent. Bot stayed quiet there.\n\n${burst.map((m) => `${m.name}: ${m.text}`).join('\n')}`);
       return;
@@ -500,7 +506,7 @@ async function processOutbox() {
   try {
     for (const file of fs.readdirSync(outboxDir).filter((f) => f.endsWith('.json'))) {
       const full = path.join(outboxDir, file);
-      const { number, group, text } = JSON.parse(fs.readFileSync(full, 'utf8'));
+      const { number, group, text, picture } = JSON.parse(fs.readFileSync(full, 'utf8'));
       fs.unlinkSync(full); // delete first so a crash never sends twice
       if (group) {
         // Group sends are one-off messages you asked for; the bot never replies in groups.
@@ -512,8 +518,16 @@ async function processOutbox() {
           );
           continue;
         }
-        await sendHuman(matches[0].id, text);
-        log(`-> group ${matches[0].subject} (outbox): ${text}`);
+        if (picture) {
+          const image = await withTimeout(generateImage(await imagePrompt(picture)), 90_000, 'image generation took too long');
+          log(`   outbox: uploading group picture for ${matches[0].subject}...`);
+          await withTimeout(sock.updateProfilePicture(matches[0].id, image), 60_000, 'WhatsApp did not confirm the picture change');
+          log(`   outbox: group picture updated`);
+        }
+        if (text) {
+          await sendHuman(matches[0].id, text);
+          log(`-> group ${matches[0].subject} (outbox): ${text}`);
+        }
         continue;
       }
       const [result] = await sock.onWhatsApp(number);
