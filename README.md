@@ -101,3 +101,7 @@ These are git-ignored and stay on your PC: `auth_info/` (your WhatsApp session, 
 npm test                          # unit tests
 node scripts/eval-persona.js      # sample replies from the live model
 ```
+
+---
+
+**Built by [Shady Al-Halawani](https://github.com/Shadysmetools)**, AI Product Manager & Tech Lead · [LinkedIn](https://www.linkedin.com/in/shady-al-halawani-333a5419a) · [Book a call](https://calendly.com/shady-al-halawani)
